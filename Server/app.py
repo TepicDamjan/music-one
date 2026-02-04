@@ -191,13 +191,16 @@ def get_yt_dlp_base_args(include_format=True, audio_only=False):
         '--no-playlist',
         '--no-warnings',
         '--no-check-certificates',  # Ignoriši SSL greške
-        '--extractor-args', 'youtube:player_client=android,ios',
+        '--extractor-args', 'youtube:player_client=android,ios,youtube_music',
         '--user-agent', 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip'
     ]
     
-    # Za audio download ne koristimo --format, jer -x automatski bira najbolji audio
+    # Za audio download koristimo -x flag koji automatski bira najbolji audio format
     if include_format and not audio_only:
         base_args.extend(['--format', 'best', '--skip-unavailable-fragments'])
+    elif audio_only:
+        # Za audio ekstrakciju koristimo format za audio
+        base_args.extend(['--format', 'bestaudio/best', '--audio-format', 'mp3', '--audio-quality', '0'])
     
     # Koristi cookies iz environment varijable ako postoje
     if YOUTUBE_COOKIES:
@@ -242,12 +245,12 @@ def download_song():
                 return jsonify({'error': f'Spotify download failed: {result.stderr[:200]}'}), 500
         elif is_youtube_url(url):
             # Koristi yt-dlp za YouTube - preuzmi kao mp3
-            # Koristi get_yt_dlp_base_args funkciju koja uključuje cookies
+            # Koristi get_yt_dlp_base_args funkciju koja uključuje cookies i format za audio
             base_args = get_yt_dlp_base_args(audio_only=True)
             base_args.extend([
                 '-x',  # Extract audio
-                '--audio-format', 'mp3',
-                '--audio-quality', '0',  # Best quality
+                '--embed-thumbnail',
+                '--add-metadata',
                 url
             ])
             
