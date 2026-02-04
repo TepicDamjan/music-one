@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+:root {
+  -background: #57C785;
+  background: -webkit-linear-gradient(45deg,rgba(87, 199, 133, 1) 50%, rgba(188, 244, 222, 1) 17%);
+  background: -moz-linear-gradient(45deg,rgba(87, 199, 133, 1) 50%, rgba(188, 244, 222, 1) 17%);
+  background: linear-gradient(45deg,rgba(87, 199, 133, 1) 50%, rgba(188, 244, 222, 1) 17%);
+  filter: progid:DXImageTransform.Microsoft.gradient(
+          startColorstr="#57C785",
+          endColorstr="#BCF4DE",
+          GradientType=0
+  );
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-greenPtext: #35524A;
+  --color-greenBG: #BCF4DE;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    -background: #57C785;
+    background: -webkit-linear-gradient(45deg,rgba(87, 199, 133, 1) 50%, rgba(188, 244, 222, 1) 17%);
+    background: -moz-linear-gradient(45deg,rgba(87, 199, 133, 1) 50%, rgba(188, 244, 222, 1) 17%);
+    background: linear-gradient(45deg,rgba(87, 199, 133, 1) 50%, rgba(188, 244, 222, 1) 17%);
+    filter: progid:DXImageTransform.Microsoft.gradient(
+            startColorstr="#57C785",
+            endColorstr="#BCF4DE",
+            GradientType=0
+    );
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  display: flex;
+  justify-content: center;
+  justify-items: center;
+  align-content: center;
+  align-items: center;
+  margin: 0;
+}

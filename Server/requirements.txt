@@ -1,0 +1,7 @@
+flask
+flask-cors
+spotipy
+spotdl
+yt-dlp
+google-api-python-client
+gunicorn
