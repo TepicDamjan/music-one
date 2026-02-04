@@ -190,24 +190,18 @@ def get_yt_dlp_base_args(include_format=True, audio_only=False):
         'yt-dlp',
         '--no-playlist',
         '--no-warnings',
-        '--no-check-certificates',  # Ignoriši SSL greške
-        '--extractor-args', 'youtube:player_client=android,ios',
+        '--no-check-certificates',
+        '--extractor-args', 'youtube:player_client=android',
         '--user-agent', 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip'
     ]
     
-    # Za audio download koristimo fleksibilnije format opcije sa fallback
+    # Ne dodajemo --format ovde za audio_only, jer -x flag automatski bira najbolji audio
     if include_format and not audio_only:
-        # Pokušaj najbolji format, ali dozvoli bilo koji ako najbolji nije dostupan
         base_args.extend(['--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', '--skip-unavailable-fragments'])
-    elif audio_only:
-        # Za audio ekstrakciju koristimo fleksibilne format opcije
-        # Ovo dozvoljava fallback na bilo koji dostupan audio format
-        base_args.extend(['--format', 'bestaudio[ext=m4a]/bestaudio/best'])
     
     # Koristi cookies iz environment varijable ako postoje
     if YOUTUBE_COOKIES:
         print("Using cookies from environment variable")
-        # Sačuvaj cookies u privremeni fajl
         import tempfile
         import atexit
         import os
@@ -215,7 +209,6 @@ def get_yt_dlp_base_args(include_format=True, audio_only=False):
         cookies_file.write(YOUTUBE_COOKIES)
         cookies_file.close()
         base_args.extend(['--cookies', cookies_file.name])
-        # Automatsko brisanje fajla kada se završi
         def cleanup_temp_file():
             try:
                 os.unlink(cookies_file.name)
@@ -246,24 +239,45 @@ def download_song():
                 print(f"spotdl error: {result.stderr}")
                 return jsonify({'error': f'Spotify download failed: {result.stderr[:200]}'}), 500
         elif is_youtube_url(url):
-            # Koristi yt-dlp za YouTube - preuzmi kao mp3
-            # Koristi get_yt_dlp_base_args funkciju koja uključuje cookies i format za audio
-            base_args = get_yt_dlp_base_args(audio_only=True)
-            base_args.extend([
-                '-x',  # Extract audio
+            # yt-dlp za YouTube - jednostavnija strategija koja radi pouzdano
+            print(f"Downloading YouTube video: {url}")
+            
+            # Koristi samo osnovne argumente bez format specifikacije za audio
+            base_args = [
+                'yt-dlp',
+                '--no-playlist',
+                '--no-warnings',
+                '--no-check-certificates',
+                '-x',  # Extract audio - automatski bira najbolji dostupan audio
                 '--audio-format', 'mp3',
                 '--audio-quality', '0',
                 '--embed-thumbnail',
                 '--add-metadata',
                 '--no-post-overwrites',
+                '--extractor-args', 'youtube:player_client=android',
+                '--user-agent', 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip',
                 url
-            ])
+            ]
             
+            # Dodaj cookies ako postoje
+            if YOUTUBE_COOKIES:
+                print("Adding cookies to download command")
+                import tempfile
+                cookies_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
+                cookies_file.write(YOUTUBE_COOKIES)
+                cookies_file.close()
+                base_args.insert(-1, '--cookies')
+                base_args.insert(-1, cookies_file.name)
+            
+            print(f"Executing yt-dlp command...")
             result = subprocess.run(base_args, capture_output=True, text=True, timeout=300)
             
             if result.returncode != 0:
-                print(f"yt-dlp download error: {result.stderr}")
+                print(f"yt-dlp download error (returncode {result.returncode}): {result.stderr}")
+                print(f"yt-dlp stdout: {result.stdout}")
                 return jsonify({'error': f'YouTube download failed: {result.stderr[:200]}'}), 500
+            
+            print(f"Download successful! Output: {result.stdout[:200]}")
         else:
             return jsonify({'error': 'Unsupported URL'}), 400
             
