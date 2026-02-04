@@ -191,16 +191,18 @@ def get_yt_dlp_base_args(include_format=True, audio_only=False):
         '--no-playlist',
         '--no-warnings',
         '--no-check-certificates',  # Ignoriši SSL greške
-        '--extractor-args', 'youtube:player_client=android,ios,youtube_music',
+        '--extractor-args', 'youtube:player_client=android,ios',
         '--user-agent', 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip'
     ]
     
-    # Za audio download koristimo -x flag koji automatski bira najbolji audio format
+    # Za audio download koristimo fleksibilnije format opcije sa fallback
     if include_format and not audio_only:
-        base_args.extend(['--format', 'best', '--skip-unavailable-fragments'])
+        # Pokušaj najbolji format, ali dozvoli bilo koji ako najbolji nije dostupan
+        base_args.extend(['--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', '--skip-unavailable-fragments'])
     elif audio_only:
-        # Za audio ekstrakciju koristimo format za audio
-        base_args.extend(['--format', 'bestaudio/best', '--audio-format', 'mp3', '--audio-quality', '0'])
+        # Za audio ekstrakciju koristimo fleksibilne format opcije
+        # Ovo dozvoljava fallback na bilo koji dostupan audio format
+        base_args.extend(['--format', 'bestaudio[ext=m4a]/bestaudio/best'])
     
     # Koristi cookies iz environment varijable ako postoje
     if YOUTUBE_COOKIES:
@@ -249,8 +251,11 @@ def download_song():
             base_args = get_yt_dlp_base_args(audio_only=True)
             base_args.extend([
                 '-x',  # Extract audio
+                '--audio-format', 'mp3',
+                '--audio-quality', '0',
                 '--embed-thumbnail',
                 '--add-metadata',
+                '--no-post-overwrites',
                 url
             ])
             
