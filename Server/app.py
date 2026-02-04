@@ -218,7 +218,7 @@ def get_yt_dlp_base_args(include_format=True, audio_only=False):
                 pass
         atexit.register(cleanup_temp_file)
     else:
-        print("No cookies provided, using default authentication")
+        print("No cookies found, using default authentication")
     
     return base_args
 
@@ -242,7 +242,9 @@ def download_song():
                 return jsonify({'error': f'Spotify download failed: {result.stderr[:200]}'}), 500
         elif is_youtube_url(url):
             # Koristi yt-dlp za YouTube - preuzmi kao mp3
-            # Koristi sistemski FFmpeg (instaliran u Dockerfile)
+            # Koristi lokalni FFmpeg
+            ffmpeg_path = os.path.join(os.path.dirname(__file__), 'ffmpeg.exe')
+            
             result = subprocess.run([
                 'yt-dlp',
                 '-x',  # Extract audio
@@ -252,6 +254,7 @@ def download_song():
                 '--no-warnings',
                 '--extractor-args', 'youtube:player_client=android',
                 '--user-agent', 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip',
+                '--ffmpeg-location', ffmpeg_path,
                 url
             ], capture_output=True, text=True, timeout=300)
             
