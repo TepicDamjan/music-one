@@ -242,21 +242,16 @@ def download_song():
                 return jsonify({'error': f'Spotify download failed: {result.stderr[:200]}'}), 500
         elif is_youtube_url(url):
             # Koristi yt-dlp za YouTube - preuzmi kao mp3
-            # Koristi lokalni FFmpeg
-            ffmpeg_path = os.path.join(os.path.dirname(__file__), 'ffmpeg.exe')
-            
-            result = subprocess.run([
-                'yt-dlp',
+            # Koristi get_yt_dlp_base_args funkciju koja uključuje cookies
+            base_args = get_yt_dlp_base_args(audio_only=True)
+            base_args.extend([
                 '-x',  # Extract audio
                 '--audio-format', 'mp3',
                 '--audio-quality', '0',  # Best quality
-                '--no-playlist',
-                '--no-warnings',
-                '--extractor-args', 'youtube:player_client=android',
-                '--user-agent', 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip',
-                '--ffmpeg-location', ffmpeg_path,
                 url
-            ], capture_output=True, text=True, timeout=300)
+            ])
+            
+            result = subprocess.run(base_args, capture_output=True, text=True, timeout=300)
             
             if result.returncode != 0:
                 print(f"yt-dlp download error: {result.stderr}")
