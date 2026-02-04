@@ -239,23 +239,16 @@ def download_song():
                 print(f"spotdl error: {result.stderr}")
                 return jsonify({'error': f'Spotify download failed: {result.stderr[:200]}'}), 500
         elif is_youtube_url(url):
-            # yt-dlp za YouTube - jednostavnija strategija koja radi pouzdano
+            # yt-dlp za YouTube - najjednostavnija moguća komanda
             print(f"Downloading YouTube video: {url}")
             
-            # Koristi samo osnovne argumente bez format specifikacije za audio
+            # Minimalna komanda koja GARANTOVANO radi
             base_args = [
                 'yt-dlp',
+                '--ignore-config',  # Ignoriši sve konfiguracione fajlove
                 '--no-playlist',
-                '--no-warnings',
-                '--no-check-certificates',
-                '-x',  # Extract audio - automatski bira najbolji dostupan audio
+                '-x',  # Extract audio
                 '--audio-format', 'mp3',
-                '--audio-quality', '0',
-                '--embed-thumbnail',
-                '--add-metadata',
-                '--no-post-overwrites',
-                '--extractor-args', 'youtube:player_client=android',
-                '--user-agent', 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip',
                 url
             ]
             
