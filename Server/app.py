@@ -239,16 +239,18 @@ def download_song():
                 print(f"spotdl error: {result.stderr}")
                 return jsonify({'error': f'Spotify download failed: {result.stderr[:200]}'}), 500
         elif is_youtube_url(url):
-            # yt-dlp za YouTube - najjednostavnija moguća komanda
+            # yt-dlp za YouTube sa bypass strategijom za signature solving
             print(f"Downloading YouTube video: {url}")
             
-            # Minimalna komanda koja GARANTOVANO radi
+            # Strategija koja zaobilazi YouTube signature solving probleme
             base_args = [
                 'yt-dlp',
-                '--ignore-config',  # Ignoriši sve konfiguracione fajlove
+                '--ignore-config',
                 '--no-playlist',
-                '-x',  # Extract audio
+                '--extractor-args', 'youtube:player_client=android',  # Android klijent zaobilazi signature
+                '-x',
                 '--audio-format', 'mp3',
+                '--audio-quality', '0',
                 url
             ]
             
