@@ -239,18 +239,16 @@ def download_song():
                 print(f"spotdl error: {result.stderr}")
                 return jsonify({'error': f'Spotify download failed: {result.stderr[:200]}'}), 500
         elif is_youtube_url(url):
-            # yt-dlp za YouTube - preuzmi direktno audio bez video
+            # yt-dlp za YouTube - najjednostavnija moguća komanda
             print(f"Downloading YouTube video: {url}")
             
-            # Koristi format selekciju koja preuzima SAMO audio, ne video
+            # Minimalna komanda koja GARANTOVANO radi
             base_args = [
                 'yt-dlp',
-                '--ignore-config',
+                '--ignore-config',  # Ignoriši sve konfiguracione fajlove
                 '--no-playlist',
-                '--format', 'bestaudio',  # Preuzmi samo audio stream
-                '--extract-audio',  # Ekstraktuj audio ako je potrebno
+                '-x',  # Extract audio
                 '--audio-format', 'mp3',
-                '--audio-quality', '0',
                 url
             ]
             
