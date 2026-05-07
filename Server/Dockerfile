@@ -17,5 +17,9 @@ RUN pip install --upgrade yt-dlp
 
 COPY . .
 
+# Default port
+ENV PORT=5000
+EXPOSE 5000
+
 # Run with Gunicorn with longer timeout for downloads
 CMD gunicorn --bind 0.0.0.0:$PORT --timeout 600 --workers 1 app:app
