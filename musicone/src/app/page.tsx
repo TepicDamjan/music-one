@@ -27,12 +27,11 @@ function Home() {
             return;
         }
 
-        // Validacija URL-a za Spotify ili YouTube
+        // Validacija URL-a - samo Spotify
         const isSpotify = url.includes('open.spotify.com') || url.includes('spotify.com');
-        const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
         
-        if (!isSpotify && !isYouTube) {
-            setError('Molimo unesite validan Spotify ili YouTube URL');
+        if (!isSpotify) {
+            setError('Molimo unesite validan Spotify URL');
             return;
         }
 
@@ -51,7 +50,7 @@ function Home() {
                         <input 
                             ref={inputRef}
                             type="text"
-                            placeholder="Unesite Spotify ili YouTube URL..."
+                            placeholder="Unesite Spotify URL..."
                             className=" bg-greenBG w-full md:w-3xl h-14 md:h-16 rounded-lg text-greenPtext font-bold p-4 text-sm md:text-base"/>
                         <div className="flex flex-row gap-4 w-full md:w-auto justify-center">
                             <button onClick={handlePaste}

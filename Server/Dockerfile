@@ -12,8 +12,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Update yt-dlp to latest version to ensure signature solving works
-RUN pip install --upgrade yt-dlp
+# Update yt-dlp to absolute latest version (nightly) for best YouTube compatibility
+RUN pip install --upgrade "yt-dlp[default]" && yt-dlp --version
 
 COPY . .
 
