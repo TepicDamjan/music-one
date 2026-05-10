@@ -2,4 +2,5 @@ flask
 flask-cors
 spotipy
 spotdl
+yt-dlp
 gunicorn

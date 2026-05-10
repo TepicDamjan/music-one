@@ -7,6 +7,8 @@ export interface SongInfo {
   release_date: string;
   duration_ms: number;
   album_image: string;
+  platform?: 'spotify' | 'youtube';
+  is_playlist?: boolean;
 }
 
 // Helper function to add timeout to fetch
@@ -100,9 +102,9 @@ export const fetchSongInfo = async (url: string): Promise<SongInfo> => {
   }
 };
 
-export const downloadSong = async (url: string): Promise<void> => {
+export const downloadSong = async (url: string, format: string = 'mp3'): Promise<{ message: string; saved_to: string }> => {
   try {
-    console.log('Downloading song for URL:', url);
+    console.log(`Downloading song for URL: ${url} [${format}]`);
     
     const response = await fetchWithRetry(
       `${API_BASE_URL}/download`,
@@ -111,7 +113,7 @@ export const downloadSong = async (url: string): Promise<void> => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, format }),
       },
       300000,
       1
@@ -131,6 +133,78 @@ export const downloadSong = async (url: string): Promise<void> => {
     return response.json();
   } catch (error) {
     console.error('Error in downloadSong:', error);
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Ne mogu da se povežem sa serverom. Proverite da li je server pokrenut na ' + API_BASE_URL);
+    }
+    throw error;
+  }
+};
+
+export const fetchYoutubeInfo = async (url: string): Promise<SongInfo> => {
+  try {
+    console.log('Fetching YouTube info for URL:', url);
+
+    const response = await fetchWithRetry(
+      `${API_BASE_URL}/youtube-info`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      },
+      30000,
+      1
+    );
+
+    if (!response.ok) {
+      let errorMessage = 'Neuspešno učitavanje YouTube informacija';
+      try {
+        const error = await response.json();
+        errorMessage = error.error || errorMessage;
+      } catch {
+        errorMessage = `Server je vratio grešku: ${response.status}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Error in fetchYoutubeInfo:', error);
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Ne mogu da se povežem sa serverom. Proverite da li je server pokrenut.');
+    }
+    throw error;
+  }
+};
+
+export const downloadYoutube = async (url: string, format: string = 'mp3'): Promise<{ message: string; saved_to: string }> => {
+  try {
+    console.log(`Downloading YouTube audio for URL: ${url} [${format}]`);
+
+    const response = await fetchWithRetry(
+      `${API_BASE_URL}/download-youtube`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, format }),
+      },
+      600000,
+      0
+    );
+
+    if (!response.ok) {
+      let errorMessage = 'Neuspešno preuzimanje sa YouTube-a';
+      try {
+        const error = await response.json();
+        errorMessage = error.error || errorMessage;
+      } catch {
+        errorMessage = `Server je vratio grešku: ${response.status}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Error in downloadYoutube:', error);
     if (error instanceof TypeError && error.message.includes('fetch')) {
       throw new Error('Ne mogu da se povežem sa serverom. Proverite da li je server pokrenut na ' + API_BASE_URL);
     }
