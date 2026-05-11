@@ -3,7 +3,9 @@ FROM python:3.11-slim
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+    nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && (command -v node >/dev/null 2>&1 || ln -sf /usr/bin/nodejs /usr/local/bin/node)
 
 WORKDIR /app
 

@@ -5,6 +5,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import os
 import json
+import shutil
 import mimetypes
 import zipfile
 import tempfile
@@ -46,6 +47,23 @@ def _download_proxy_cmd():
     if not MUSICONE_PROXY:
         return []
     return ['--proxy', MUSICONE_PROXY]
+
+
+def _yt_dlp_argv():
+    """Osnova yt-dlp komande: proxy + JS runtime (YouTube cesto zahteva Node/deno)."""
+    out = ['yt-dlp', *_download_proxy_cmd()]
+    js = os.environ.get('YTDLP_JS_RUNTIMES', '').strip()
+    if js:
+        out.extend(['--js-runtimes', js])
+        return out
+    node = shutil.which('node') or shutil.which('nodejs')
+    if node:
+        out.extend(['--js-runtimes', f'node:{node}'])
+        return out
+    deno = shutil.which('deno')
+    if deno:
+        out.extend(['--js-runtimes', f'deno:{deno}'])
+    return out
 
 
 def _snapshot_download_dir():
@@ -266,8 +284,7 @@ def youtube_info():
 
     try:
         cmd = [
-            'yt-dlp',
-            *_download_proxy_cmd(),
+            *_yt_dlp_argv(),
             '--dump-json',
             '--no-playlist',   # samo prvi video ako je playlist
             '--flat-playlist',
@@ -327,8 +344,7 @@ def download_youtube():
         if fmt == 'mp4':
             # Video + audio, spoji u MP4
             cmd = [
-                'yt-dlp',
-                *_download_proxy_cmd(),
+                *_yt_dlp_argv(),
                 '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
                 '--merge-output-format', 'mp4',
                 '--add-metadata',
@@ -339,8 +355,7 @@ def download_youtube():
         else:
             # Audio only: mp3 ili flac
             cmd = [
-                'yt-dlp',
-                *_download_proxy_cmd(),
+                *_yt_dlp_argv(),
                 '-x',
                 '--audio-format', fmt,
                 '--audio-quality', '0',      # Najbolji kvalitet
