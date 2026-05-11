@@ -18,6 +18,18 @@ DOWNLOAD_DIR = os.environ.get('DOWNLOAD_DIR', os.path.expanduser('~/Music/MusicO
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 print(f"Downloads will be saved to: {DOWNLOAD_DIR}")
 
+# Opcioni proxy samo za spotdl / yt-dlp (npr. residential proxy da Oracle IP ne bude blokiran).
+# Postavi MUSICONE_PROXY, npr. http://user:pass@host:port ili socks5://host:1080
+MUSICONE_PROXY = os.environ.get('MUSICONE_PROXY', '').strip()
+if MUSICONE_PROXY:
+    print('MUSICONE_PROXY is set; spotdl and yt-dlp will use it for outbound requests.')
+
+def _download_proxy_cmd():
+    """Vraca ['--proxy', url] ako je MUSICONE_PROXY postavljen, inace []."""
+    if not MUSICONE_PROXY:
+        return []
+    return ['--proxy', MUSICONE_PROXY]
+
 # Spotify autentifikacija
 auth_manager = SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET)
 sp = spotipy.Spotify(auth_manager=auth_manager)
@@ -104,6 +116,7 @@ def download_song():
         if SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET:
             cmd.extend(['--client-id', SPOTIFY_CLIENT_ID, '--client-secret', SPOTIFY_CLIENT_SECRET])
 
+        cmd.extend(_download_proxy_cmd())
         cmd.append(url)
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=400)
@@ -133,6 +146,7 @@ def youtube_info():
     try:
         cmd = [
             'yt-dlp',
+            *_download_proxy_cmd(),
             '--dump-json',
             '--no-playlist',   # samo prvi video ako je playlist
             '--flat-playlist',
@@ -192,6 +206,7 @@ def download_youtube():
             # Video + audio, spoji u MP4
             cmd = [
                 'yt-dlp',
+                *_download_proxy_cmd(),
                 '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
                 '--merge-output-format', 'mp4',
                 '--add-metadata',
@@ -203,6 +218,7 @@ def download_youtube():
             # Audio only: mp3 ili flac
             cmd = [
                 'yt-dlp',
+                *_download_proxy_cmd(),
                 '-x',
                 '--audio-format', fmt,
                 '--audio-quality', '0',      # Najbolji kvalitet
