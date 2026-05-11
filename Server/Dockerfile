@@ -14,8 +14,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Default port
+RUN mkdir -p /app/downloads
+
+# Default port; download folder mora biti isti kao volume mount u docker run (-v ...:/app/downloads)
 ENV PORT=5000
+ENV DOWNLOAD_DIR=/app/downloads
 EXPOSE 5000
 
 # Run with Gunicorn with longer timeout for downloads

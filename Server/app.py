@@ -18,8 +18,20 @@ CORS(app, expose_headers=['Content-Disposition'])
 SPOTIFY_CLIENT_ID = os.environ.get('SPOTIFY_CLIENT_ID', '')
 SPOTIFY_CLIENT_SECRET = os.environ.get('SPOTIFY_CLIENT_SECRET', '')
 
-# Direktorijum za preuzimanje (lokalno: ~/Music/MusicOne, Docker: /app/downloads)
-DOWNLOAD_DIR = os.environ.get('DOWNLOAD_DIR', os.path.expanduser('~/Music/MusicOne'))
+
+def _resolve_download_dir():
+    """Env DOWNLOAD_DIR ako je set; inace /app/downloads u Dockeru ako postoji; inace ~/Music/MusicOne."""
+    raw = os.environ.get('DOWNLOAD_DIR', '').strip()
+    if raw:
+        return os.path.abspath(raw)
+    docker_default = '/app/downloads'
+    if os.path.isdir(docker_default) and os.access(docker_default, os.W_OK):
+        return docker_default
+    return os.path.abspath(os.path.expanduser('~/Music/MusicOne'))
+
+
+# Direktorijum za preuzimanje (lokalno: ~/Music/MusicOne; Docker image: /app/downloads)
+DOWNLOAD_DIR = _resolve_download_dir()
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 print(f"Downloads will be saved to: {DOWNLOAD_DIR}")
 
@@ -87,6 +99,14 @@ def _response_with_downloaded_files(snapshot_before):
     """Vraca send_file (jedan fajl ili zip) ili JSON gresku ako nema fajlova."""
     paths = _collect_paths_after_download(snapshot_before)
     if not paths:
+        try:
+            names = os.listdir(DOWNLOAD_DIR)
+        except OSError:
+            names = []
+        print(
+            f"No new media files under {DOWNLOAD_DIR} (had {len(snapshot_before)} paths in snapshot; "
+            f"now {len(names)} top-level names: {names[:20]})"
+        )
         return jsonify({'error': 'Preuzimanje je završeno, ali odgovarajući fajl nije pronađen u download folderu.'}), 500
 
     if len(paths) == 1:
