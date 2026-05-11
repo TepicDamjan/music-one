@@ -6,6 +6,7 @@ from spotipy.oauth2 import SpotifyClientCredentials
 import os
 import json
 import shutil
+import time
 import mimetypes
 import zipfile
 import tempfile
@@ -113,9 +114,85 @@ def _collect_paths_after_download(snapshot_before):
     return [p for p, _ in paths]
 
 
-def _response_with_downloaded_files(snapshot_before):
+def _download_dir_real():
+    try:
+        return os.path.realpath(DOWNLOAD_DIR)
+    except OSError:
+        return os.path.abspath(DOWNLOAD_DIR)
+
+
+def _is_safe_media_path(path: str) -> bool:
+    """Fajl mora biti ispod DOWNLOAD_DIR i imati poznatu medija ekstenziju."""
+    if not path or not os.path.isfile(path):
+        return False
+    try:
+        root = _download_dir_real()
+        p = os.path.realpath(path)
+        ext = os.path.splitext(p)[1].lower()
+        if ext not in MEDIA_EXTENSIONS:
+            return False
+        return p == root or p.startswith(root + os.sep)
+    except (OSError, ValueError):
+        return False
+
+
+def _paths_from_ytdlp_logs(stdout: str, stderr: str):
+    """Parsira apsolutne putanje koje yt-dlp ispisuje (--print after_move ili sl.)."""
+    ordered = []
+    seen = set()
+    for block in (stdout or '', stderr or ''):
+        for raw in block.splitlines():
+            line = raw.strip().strip('\ufeff').strip('"').strip("'")
+            if not line or line.startswith('{'):
+                continue
+            if line.startswith(('[download]', 'WARNING:', 'ERROR:', 'Deprecated:')):
+                continue
+            if not os.path.isabs(line):
+                continue
+            if not _is_safe_media_path(line):
+                continue
+            rp = os.path.realpath(line)
+            if rp not in seen:
+                seen.add(rp)
+                ordered.append(rp)
+    return ordered
+
+
+def _collect_paths_since_start(started_at: float, slack_sec=5.0):
+    """Poslednji fallback: medija fajlovi u DOWNLOAD_DIR sa mtime >= started_at - slack."""
+    cutoff = started_at - slack_sec
+    found = []
+    if not os.path.isdir(DOWNLOAD_DIR):
+        return found
+    for dirpath, _, filenames in os.walk(DOWNLOAD_DIR):
+        for name in filenames:
+            if name.startswith('.') or name.endswith('.part'):
+                continue
+            ext = os.path.splitext(name)[1].lower()
+            if ext not in MEDIA_EXTENSIONS:
+                continue
+            path = os.path.join(dirpath, name)
+            if not os.path.isfile(path):
+                continue
+            try:
+                mt = os.path.getmtime(path)
+            except OSError:
+                continue
+            if mt >= cutoff:
+                found.append((path, mt))
+    found.sort(key=lambda x: -x[1])
+    return [p for p, _ in found]
+
+
+def _response_with_downloaded_files(snapshot_before, preferred_paths=None, started_at=None):
     """Vraca send_file (jedan fajl ili zip) ili JSON gresku ako nema fajlova."""
-    paths = _collect_paths_after_download(snapshot_before)
+    paths = []
+    if preferred_paths:
+        paths = [p for p in preferred_paths if _is_safe_media_path(p)]
+    if not paths:
+        paths = _collect_paths_after_download(snapshot_before)
+    if not paths and started_at is not None:
+        paths = _collect_paths_since_start(started_at)
     if not paths:
         try:
             names = os.listdir(DOWNLOAD_DIR)
@@ -235,6 +312,7 @@ def download_song():
     try:
         print(f"Starting Spotify download for {url} [{fmt}]")
         snapshot_before = _snapshot_download_dir()
+        started_at = time.time()
 
         cmd = ['spotdl']
 
@@ -264,7 +342,9 @@ def download_song():
             print(f"spotdl error: {result.stderr}")
             return jsonify({'error': f'Spotify download failed: {result.stderr[:200]}'}), 500
 
-        return _response_with_downloaded_files(snapshot_before)
+        return _response_with_downloaded_files(
+            snapshot_before, preferred_paths=None, started_at=started_at
+        )
 
     except subprocess.CalledProcessError as e:
         print(f"Error during download: {e}")
@@ -338,8 +418,15 @@ def download_youtube():
         print(f"Starting YouTube download for {url} [{fmt}]")
         print(f"Saving to: {DOWNLOAD_DIR}")
         snapshot_before = _snapshot_download_dir()
+        started_at = time.time()
 
         output_template = os.path.join(DOWNLOAD_DIR, '%(title)s.%(ext)s')
+        tail = [
+            '--no-progress',
+            '--print', 'after_move:%(filepath)s',
+            '-o', output_template,
+            url,
+        ]
 
         if fmt == 'mp4':
             # Video + audio, spoji u MP4
@@ -349,8 +436,7 @@ def download_youtube():
                 '--merge-output-format', 'mp4',
                 '--add-metadata',
                 '--embed-thumbnail',
-                '-o', output_template,
-                url
+                *tail,
             ]
         else:
             # Audio only: mp3 ili flac
@@ -361,8 +447,7 @@ def download_youtube():
                 '--audio-quality', '0',      # Najbolji kvalitet
                 '--add-metadata',
                 '--embed-thumbnail',
-                '-o', output_template,
-                url
+                *tail,
             ]
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
@@ -371,7 +456,19 @@ def download_youtube():
             print(f"yt-dlp error: {result.stderr}")
             return jsonify({'error': f'YouTube download failed: {result.stderr[:200]}'}), 500
 
-        return _response_with_downloaded_files(snapshot_before)
+        preferred = _paths_from_ytdlp_logs(result.stdout, result.stderr)
+        if not preferred:
+            print(
+                'yt-dlp finished OK but no filepath in logs; stdout tail:',
+                (result.stdout or '')[-500:],
+                'stderr tail:',
+                (result.stderr or '')[-500:],
+            )
+        return _response_with_downloaded_files(
+            snapshot_before,
+            preferred_paths=(preferred if preferred else None),
+            started_at=started_at,
+        )
 
     except subprocess.TimeoutExpired:
         return jsonify({'error': 'Download timed out'}), 504
