@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from "next/link";
-import { fetchSongInfo, downloadSong, fetchYoutubeInfo, downloadYoutube, SongInfo } from '@/app/utils/api';
+import { fetchSongInfo, downloadSong, fetchYoutubeInfo, downloadYoutube, SongInfo, DownloadResult } from '@/app/utils/api';
 
 type AudioFormat = 'mp3' | 'flac' | 'mp4';
 
@@ -73,14 +73,14 @@ function Download() {
             setDownloadSuccess(false);
             setSavedTo('');
 
-            let result: { message: string; saved_to: string };
+            let result: DownloadResult;
             if (platform === 'youtube') {
                 result = await downloadYoutube(url, selectedFormat);
             } else {
                 result = await downloadSong(url, selectedFormat);
             }
 
-            setSavedTo(result.saved_to);
+            setSavedTo(result.filename ? `Preuzeto: ${result.filename}` : result.message);
             setDownloadSuccess(true);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Greška pri preuzimanju');
@@ -176,8 +176,8 @@ function Download() {
                                 <div className="text-green-600 text-center font-bold space-y-1">
                                     <div>✅ Preuzimanje završeno! ({selectedFormat.toUpperCase()})</div>
                                     {savedTo && (
-                                        <div className="text-xs opacity-70 font-normal">
-                                            Sačuvano u: {savedTo}
+                                        <div className="text-xs opacity-70 font-normal break-all">
+                                            {savedTo}
                                         </div>
                                     )}
                                 </div>

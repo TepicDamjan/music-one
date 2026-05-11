@@ -1,5 +1,34 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
+function parseFilenameFromContentDisposition(cd: string | null): string | null {
+  if (!cd) return null;
+  const star = cd.match(/filename\*=UTF-8''([^;\s]+)/i);
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1].replace(/['"]/g, ''));
+    } catch {
+      return star[1];
+    }
+  }
+  const quoted = cd.match(/filename="((?:\\.|[^"\\])*)"/i);
+  if (quoted?.[1]) return quoted[1].replace(/\\(.)/g, '$1');
+  const plain = cd.match(/filename=([^;\s]+)/i);
+  if (plain?.[1]) return plain[1].replace(/['"]/g, '');
+  return null;
+}
+
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export interface SongInfo {
   name: string;
   artist: string;
@@ -102,7 +131,12 @@ export const fetchSongInfo = async (url: string): Promise<SongInfo> => {
   }
 };
 
-export const downloadSong = async (url: string, format: string = 'mp3'): Promise<{ message: string; saved_to: string }> => {
+export interface DownloadResult {
+  message: string;
+  filename?: string;
+}
+
+export const downloadSong = async (url: string, format: string = 'mp3'): Promise<DownloadResult> => {
   try {
     console.log(`Downloading song for URL: ${url} [${format}]`);
     
@@ -115,8 +149,8 @@ export const downloadSong = async (url: string, format: string = 'mp3'): Promise
         },
         body: JSON.stringify({ url, format }),
       },
-      300000,
-      1
+      600000,
+      0
     );
 
     if (!response.ok) {
@@ -130,7 +164,17 @@ export const downloadSong = async (url: string, format: string = 'mp3'): Promise
       throw new Error(errorMessage);
     }
 
-    return response.json();
+    const ct = response.headers.get('Content-Type') || '';
+    if (ct.includes('application/json')) {
+      return (await response.json()) as DownloadResult;
+    }
+
+    const blob = await response.blob();
+    const cd = response.headers.get('Content-Disposition');
+    const filename =
+      parseFilenameFromContentDisposition(cd) || `musicone-spotify.${format}`;
+    triggerBlobDownload(blob, filename);
+    return { message: 'Fajl je preuzet u pregledač.', filename };
   } catch (error) {
     console.error('Error in downloadSong:', error);
     if (error instanceof TypeError && error.message.includes('fetch')) {
@@ -176,7 +220,7 @@ export const fetchYoutubeInfo = async (url: string): Promise<SongInfo> => {
   }
 };
 
-export const downloadYoutube = async (url: string, format: string = 'mp3'): Promise<{ message: string; saved_to: string }> => {
+export const downloadYoutube = async (url: string, format: string = 'mp3'): Promise<DownloadResult> => {
   try {
     console.log(`Downloading YouTube audio for URL: ${url} [${format}]`);
 
@@ -202,7 +246,18 @@ export const downloadYoutube = async (url: string, format: string = 'mp3'): Prom
       throw new Error(errorMessage);
     }
 
-    return response.json();
+    const ct = response.headers.get('Content-Type') || '';
+    if (ct.includes('application/json')) {
+      return (await response.json()) as DownloadResult;
+    }
+
+    const blob = await response.blob();
+    const cd = response.headers.get('Content-Disposition');
+    const ext = format === 'mp4' ? 'mp4' : format;
+    const filename =
+      parseFilenameFromContentDisposition(cd) || `musicone-youtube.${ext}`;
+    triggerBlobDownload(blob, filename);
+    return { message: 'Fajl je preuzet u pregledač.', filename };
   } catch (error) {
     console.error('Error in downloadYoutube:', error);
     if (error instanceof TypeError && error.message.includes('fetch')) {

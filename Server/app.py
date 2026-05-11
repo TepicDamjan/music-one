@@ -1,13 +1,18 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file, after_this_request
 from flask_cors import CORS
 import subprocess
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import os
 import json
+import mimetypes
+import zipfile
+import tempfile
+
+MEDIA_EXTENSIONS = {'.mp3', '.flac', '.mp4', '.m4a', '.webm', '.opus', '.ogg', '.wav', '.mkv'}
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, expose_headers=['Content-Disposition'])
 
 # Spotify API kljucevi
 SPOTIFY_CLIENT_ID = os.environ.get('SPOTIFY_CLIENT_ID', '')
@@ -29,6 +34,101 @@ def _download_proxy_cmd():
     if not MUSICONE_PROXY:
         return []
     return ['--proxy', MUSICONE_PROXY]
+
+
+def _snapshot_download_dir():
+    """Relativna putanja (od DOWNLOAD_DIR) -> mtime pre preuzimanja."""
+    snap = {}
+    if not os.path.isdir(DOWNLOAD_DIR):
+        return snap
+    for dirpath, _, filenames in os.walk(DOWNLOAD_DIR):
+        for name in filenames:
+            if name.startswith('.'):
+                continue
+            path = os.path.join(dirpath, name)
+            if not os.path.isfile(path):
+                continue
+            try:
+                rel = os.path.relpath(path, DOWNLOAD_DIR)
+                snap[rel] = os.path.getmtime(path)
+            except (OSError, ValueError):
+                continue
+    return snap
+
+
+def _collect_paths_after_download(snapshot_before):
+    """Medija fajlovi koji su novi ili imaju noviji mtime (posle spotdl/yt-dlp)."""
+    paths = []
+    if not os.path.isdir(DOWNLOAD_DIR):
+        return paths
+    for dirpath, _, filenames in os.walk(DOWNLOAD_DIR):
+        for name in filenames:
+            if name.startswith('.'):
+                continue
+            ext = os.path.splitext(name)[1].lower()
+            if ext not in MEDIA_EXTENSIONS:
+                continue
+            path = os.path.join(dirpath, name)
+            if not os.path.isfile(path):
+                continue
+            try:
+                rel = os.path.relpath(path, DOWNLOAD_DIR)
+                mt = os.path.getmtime(path)
+            except (OSError, ValueError):
+                continue
+            prev = snapshot_before.get(rel)
+            if prev is None or mt > prev + 0.25:
+                paths.append((path, mt))
+    paths.sort(key=lambda x: -x[1])
+    return [p for p, _ in paths]
+
+
+def _response_with_downloaded_files(snapshot_before):
+    """Vraca send_file (jedan fajl ili zip) ili JSON gresku ako nema fajlova."""
+    paths = _collect_paths_after_download(snapshot_before)
+    if not paths:
+        return jsonify({'error': 'Preuzimanje je završeno, ali odgovarajući fajl nije pronađen u download folderu.'}), 500
+
+    if len(paths) == 1:
+        path = paths[0]
+        mime = mimetypes.guess_type(path)[0] or 'application/octet-stream'
+        return send_file(
+            path,
+            as_attachment=True,
+            download_name=os.path.basename(path),
+            mimetype=mime,
+            max_age=0,
+        )
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.zip', dir=DOWNLOAD_DIR)
+    tmp_path = tmp.name
+    tmp.close()
+    try:
+        with zipfile.ZipFile(tmp_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for p in paths:
+                zf.write(p, arcname=os.path.basename(p))
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+    @after_this_request
+    def _cleanup_zip(response):
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return response
+
+    return send_file(
+        tmp_path,
+        as_attachment=True,
+        download_name='musicone-download.zip',
+        mimetype='application/zip',
+        max_age=0,
+    )
 
 # Spotify autentifikacija
 auth_manager = SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET)
@@ -96,6 +196,7 @@ def download_song():
 
     try:
         print(f"Starting Spotify download for {url} [{fmt}]")
+        snapshot_before = _snapshot_download_dir()
 
         cmd = ['spotdl']
 
@@ -125,7 +226,7 @@ def download_song():
             print(f"spotdl error: {result.stderr}")
             return jsonify({'error': f'Spotify download failed: {result.stderr[:200]}'}), 500
 
-        return jsonify({'message': f'Download complete ({fmt.upper()})', 'saved_to': DOWNLOAD_DIR}), 200
+        return _response_with_downloaded_files(snapshot_before)
 
     except subprocess.CalledProcessError as e:
         print(f"Error during download: {e}")
@@ -199,6 +300,7 @@ def download_youtube():
     try:
         print(f"Starting YouTube download for {url} [{fmt}]")
         print(f"Saving to: {DOWNLOAD_DIR}")
+        snapshot_before = _snapshot_download_dir()
 
         output_template = os.path.join(DOWNLOAD_DIR, '%(title)s.%(ext)s')
 
@@ -234,10 +336,7 @@ def download_youtube():
             print(f"yt-dlp error: {result.stderr}")
             return jsonify({'error': f'YouTube download failed: {result.stderr[:200]}'}), 500
 
-        return jsonify({
-            'message': f'YouTube download complete ({fmt.upper()})',
-            'saved_to': DOWNLOAD_DIR
-        }), 200
+        return _response_with_downloaded_files(snapshot_before)
 
     except subprocess.TimeoutExpired:
         return jsonify({'error': 'Download timed out'}), 504
