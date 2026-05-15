@@ -50,6 +50,24 @@ def _download_proxy_cmd():
     return ['--proxy', MUSICONE_PROXY]
 
 
+def _spotdl_argv(url: str, fmt: str):
+    """spotdl 4.x: obavezan podkomanda 'download'; --config prima samo flag, ne putanju."""
+    cmd = ['spotdl', 'download']
+    if os.path.isfile(os.path.expanduser('~/.spotdl/config.json')):
+        cmd.append('--config')
+    cmd.extend([
+        '--format', fmt,
+        '--output', DOWNLOAD_DIR,
+        '--audio', 'youtube-music',
+        '--overwrite', 'force',
+    ])
+    if SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET:
+        cmd.extend(['--client-id', SPOTIFY_CLIENT_ID, '--client-secret', SPOTIFY_CLIENT_SECRET])
+    cmd.extend(_download_proxy_cmd())
+    cmd.append(url)
+    return cmd
+
+
 def _yt_dlp_argv():
     """Osnova yt-dlp komande: proxy + JS runtime (YouTube cesto zahteva Node/deno)."""
     out = ['yt-dlp', *_download_proxy_cmd()]
@@ -314,33 +332,19 @@ def download_song():
         snapshot_before = _snapshot_download_dir()
         started_at = time.time()
 
-        cmd = ['spotdl']
-
-        # Dodaj config fajl ako postoji (Docker ili lokalni)
-        CONFIG_FILE = '/app/spotdl_config.json'
-        LOCAL_CONFIG = os.path.join(os.path.dirname(__file__), 'spotdl_config.json')
-        if os.path.exists(CONFIG_FILE):
-            print(f"Using spotdl config from {CONFIG_FILE}")
-            cmd.extend(['--config', CONFIG_FILE])
-        elif os.path.exists(LOCAL_CONFIG):
-            print(f"Using local spotdl config from {LOCAL_CONFIG}")
-            cmd.extend(['--config', LOCAL_CONFIG])
-
-        # Format i output
-        cmd.extend(['--format', fmt])
-        cmd.extend(['--output', DOWNLOAD_DIR])
-
-        if SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET:
-            cmd.extend(['--client-id', SPOTIFY_CLIENT_ID, '--client-secret', SPOTIFY_CLIENT_SECRET])
-
-        cmd.extend(_download_proxy_cmd())
-        cmd.append(url)
+        cmd = _spotdl_argv(url, fmt)
+        print(f"spotdl cmd: {' '.join(cmd[:8])}...")
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=400)
 
         if result.returncode != 0:
             print(f"spotdl error: {result.stderr}")
-            return jsonify({'error': f'Spotify download failed: {result.stderr[:200]}'}), 500
+            err = (result.stderr or result.stdout or '').strip()
+            if err.startswith('usage:'):
+                err = 'spotdl nije pokrenut ispravno (proveri verziju na serveru: spotdl --version).'
+            elif len(err) > 220:
+                err = err[:220] + '...'
+            return jsonify({'error': f'Spotify download failed: {err}'}), 500
 
         return _response_with_downloaded_files(
             snapshot_before, preferred_paths=None, started_at=started_at
