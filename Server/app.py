@@ -4,6 +4,7 @@ import subprocess
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import os
+import sys
 import json
 import shutil
 import time
@@ -50,11 +51,50 @@ def _download_proxy_cmd():
     return ['--proxy', MUSICONE_PROXY]
 
 
+_spotdl_major_cache = None
+
+
+def _get_spotdl_major_version():
+    """Keširana major verzija spotdl (4 = download podkomanda)."""
+    global _spotdl_major_cache
+    if _spotdl_major_cache is not None:
+        return _spotdl_major_cache
+    version_text = 'unknown'
+    try:
+        r = subprocess.run(
+            [sys.executable, '-m', 'spotdl', '--version'],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        version_text = (r.stdout or r.stderr or '').strip()
+        _spotdl_major_cache = int(version_text.split('.')[0]) if version_text else 4
+    except Exception:
+        _spotdl_major_cache = 4
+    print(f'spotdl version: {version_text} (major={_spotdl_major_cache})')
+    return _spotdl_major_cache
+
+
+def _spotdl_ytdlp_extra_args():
+    """Prosledi JS runtime yt-dlp-u koji spotdl koristi interno."""
+    extra = []
+    js = os.environ.get('YTDLP_JS_RUNTIMES', '').strip()
+    if js:
+        extra.extend(['--js-runtimes', js])
+        return extra
+    node = shutil.which('node') or shutil.which('nodejs')
+    if node:
+        extra.extend(['--js-runtimes', f'node:{node}'])
+    return extra
+
+
 def _spotdl_argv(url: str, fmt: str):
-    """spotdl 4.x: obavezan podkomanda 'download'; --config prima samo flag, ne putanju."""
-    cmd = ['spotdl', 'download']
-    if os.path.isfile(os.path.expanduser('~/.spotdl/config.json')):
-        cmd.append('--config')
+    """spotdl 4.x: 'python -m spotdl download ...'. v3: bez download podkomande."""
+    base = [sys.executable, '-m', 'spotdl']
+    if _get_spotdl_major_version() >= 4:
+        cmd = base + ['download']
+    else:
+        cmd = base
     cmd.extend([
         '--format', fmt,
         '--output', DOWNLOAD_DIR,
@@ -63,6 +103,9 @@ def _spotdl_argv(url: str, fmt: str):
     ])
     if SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET:
         cmd.extend(['--client-id', SPOTIFY_CLIENT_ID, '--client-secret', SPOTIFY_CLIENT_SECRET])
+    ytdlp_extra = _spotdl_ytdlp_extra_args()
+    if ytdlp_extra:
+        cmd.extend(['--yt-dlp-args', ' '.join(ytdlp_extra)])
     cmd.extend(_download_proxy_cmd())
     cmd.append(url)
     return cmd
@@ -335,15 +378,22 @@ def download_song():
         cmd = _spotdl_argv(url, fmt)
         print(f"spotdl cmd: {' '.join(cmd[:8])}...")
 
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=400)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=400, cwd=DOWNLOAD_DIR
+        )
 
         if result.returncode != 0:
-            print(f"spotdl error: {result.stderr}")
-            err = (result.stderr or result.stdout or '').strip()
-            if err.startswith('usage:'):
-                err = 'spotdl nije pokrenut ispravno (proveri verziju na serveru: spotdl --version).'
-            elif len(err) > 220:
-                err = err[:220] + '...'
+            print(f"spotdl stdout: {result.stdout[-800:] if result.stdout else ''}")
+            print(f"spotdl stderr: {result.stderr[-800:] if result.stderr else ''}")
+            err = (result.stderr or result.stdout or 'Nepoznata greška spotdl').strip()
+            if err.startswith('usage:') or 'usage: spotdl' in err:
+                ver = _get_spotdl_major_version()
+                err = (
+                    f'spotdl CLI nije usaglašen (verzija major={ver}). '
+                    'Na serveru uradi rebuild Docker image (spotdl>=4.2).'
+                )
+            elif len(err) > 280:
+                err = err[:280] + '...'
             return jsonify({'error': f'Spotify download failed: {err}'}), 500
 
         return _response_with_downloaded_files(
