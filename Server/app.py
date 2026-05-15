@@ -75,19 +75,6 @@ def _get_spotdl_major_version():
     return _spotdl_major_cache
 
 
-def _spotdl_ytdlp_extra_args():
-    """Prosledi JS runtime yt-dlp-u koji spotdl koristi interno."""
-    extra = []
-    js = os.environ.get('YTDLP_JS_RUNTIMES', '').strip()
-    if js:
-        extra.extend(['--js-runtimes', js])
-        return extra
-    node = shutil.which('node') or shutil.which('nodejs')
-    if node:
-        extra.extend(['--js-runtimes', f'node:{node}'])
-    return extra
-
-
 def _spotdl_argv(url: str, fmt: str):
     """spotdl 4.x: 'python -m spotdl download ...'. v3: bez download podkomande."""
     base = [sys.executable, '-m', 'spotdl']
@@ -103,9 +90,8 @@ def _spotdl_argv(url: str, fmt: str):
     ])
     if SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET:
         cmd.extend(['--client-id', SPOTIFY_CLIENT_ID, '--client-secret', SPOTIFY_CLIENT_SECRET])
-    ytdlp_extra = _spotdl_ytdlp_extra_args()
-    if ytdlp_extra:
-        cmd.extend(['--yt-dlp-args', ' '.join(ytdlp_extra)])
+    # Ne koristiti --yt-dlp-args ovde: pogresan format lomi spotdl CLI (usage:).
+    # Node je u Docker image-u; spotdl/yt-dlp ga nasledi iz PATH.
     cmd.extend(_download_proxy_cmd())
     cmd.append(url)
     return cmd
@@ -387,11 +373,7 @@ def download_song():
             print(f"spotdl stderr: {result.stderr[-800:] if result.stderr else ''}")
             err = (result.stderr or result.stdout or 'Nepoznata greška spotdl').strip()
             if err.startswith('usage:') or 'usage: spotdl' in err:
-                ver = _get_spotdl_major_version()
-                err = (
-                    f'spotdl CLI nije usaglašen (verzija major={ver}). '
-                    'Na serveru uradi rebuild Docker image (spotdl>=4.2).'
-                )
+                err = 'spotdl je pozvan sa pogrešnim argumentima. Proveri docker logs.'
             elif len(err) > 280:
                 err = err[:280] + '...'
             return jsonify({'error': f'Spotify download failed: {err}'}), 500
