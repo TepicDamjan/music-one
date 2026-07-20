@@ -63,6 +63,18 @@ def _download_proxy_cmd():
     return ['--proxy', MUSICONE_PROXY]
 
 
+def _spotdl_env():
+    """Env za spotdl podproces. spotdl-ov --proxy regex prihvata samo IP adrese
+    (hostname tipa gw.example.com odbija kao 'Invalid proxy server'), pa proxy
+    prosledjujemo kroz HTTP(S)_PROXY varijable koje requests i yt-dlp postuju."""
+    if not MUSICONE_PROXY:
+        return None
+    env = os.environ.copy()
+    for key in ('HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy'):
+        env[key] = MUSICONE_PROXY
+    return env
+
+
 _spotdl_major_cache = None
 
 
@@ -114,7 +126,7 @@ def _spotdl_argv(url: str, fmt: str):
         ])
     # Ne koristiti --yt-dlp-args ovde: pogresan format lomi spotdl CLI (usage:).
     # Node je u Docker image-u; spotdl/yt-dlp ga nasledi iz PATH.
-    cmd.extend(_download_proxy_cmd())
+    # Proxy NE ide kroz --proxy (spotdl regex odbija hostname), vec kroz _spotdl_env().
     return cmd
 
 
@@ -411,7 +423,8 @@ def download_song():
         print(f"spotdl cmd: {' '.join(cmd[:8])}...")
 
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=400, cwd=DOWNLOAD_DIR
+            cmd, capture_output=True, text=True, timeout=400, cwd=DOWNLOAD_DIR,
+            env=_spotdl_env(),
         )
 
         if result.returncode != 0:
