@@ -88,12 +88,16 @@ def _get_spotdl_major_version():
 
 
 def _spotdl_argv(url: str, fmt: str):
-    """spotdl 4.x: 'python -m spotdl download ...'. v3: bez download podkomande."""
+    """spotdl 4.x: 'python -m spotdl download ...'. v3: bez download podkomande.
+
+    URL mora ici odmah iza 'download': ako opcije razdvoje podkomandu od URL-a,
+    spotdl-ov argparse prijavi 'unrecognized arguments: <url>'.
+    """
     base = [sys.executable, '-m', 'spotdl']
     if _get_spotdl_major_version() >= 4:
-        cmd = base + ['download']
+        cmd = base + ['download', url]
     else:
-        cmd = base
+        cmd = base + [url]
     cmd.extend([
         '--format', fmt,
         '--output', DOWNLOAD_DIR,
@@ -111,7 +115,6 @@ def _spotdl_argv(url: str, fmt: str):
     # Ne koristiti --yt-dlp-args ovde: pogresan format lomi spotdl CLI (usage:).
     # Node je u Docker image-u; spotdl/yt-dlp ga nasledi iz PATH.
     cmd.extend(_download_proxy_cmd())
-    cmd.append(url)
     return cmd
 
 
