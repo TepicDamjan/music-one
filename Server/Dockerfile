@@ -22,6 +22,8 @@ RUN mkdir -p /app/downloads /root/.spotdl \
 # Default port; download folder mora biti isti kao volume mount u docker run (-v ...:/app/downloads)
 ENV PORT=5000
 ENV DOWNLOAD_DIR=/app/downloads
+# Bez ovoga se print() poruke iz app.py ne vide u docker logs (stdout buffering)
+ENV PYTHONUNBUFFERED=1
 EXPOSE 5000
 
 # Run with Gunicorn with longer timeout for downloads
