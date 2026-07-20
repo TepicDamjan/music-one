@@ -4,8 +4,17 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     nodejs \
+    curl \
+    unzip \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && (command -v node >/dev/null 2>&1 || ln -sf /usr/bin/nodejs /usr/local/bin/node)
+
+# Deno: noviji yt-dlp zahteva JS runtime za YouTube potpise, a spotdl-ov interni
+# yt-dlp trazi bas deno ("Some YouTube downloads require Deno"). Instalira se u
+# /usr/local/bin/deno; install skripta sama detektuje arhitekturu (x86_64/aarch64).
+RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
+    && deno --version
 
 WORKDIR /app
 
