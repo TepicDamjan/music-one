@@ -427,9 +427,13 @@ def download_song():
             env=_spotdl_env(),
         )
 
+        # spotdl zna vratiti exit kod 0 i kad nista ne skine (gresku ispise samo u tekstu),
+        # zato izlaz logujemo uvek.
+        print(f"spotdl exit code: {result.returncode}")
+        print(f"spotdl stdout: {result.stdout[-1500:] if result.stdout else '(empty)'}")
+        print(f"spotdl stderr: {result.stderr[-1500:] if result.stderr else '(empty)'}")
+
         if result.returncode != 0:
-            print(f"spotdl stdout: {result.stdout[-800:] if result.stdout else ''}")
-            print(f"spotdl stderr: {result.stderr[-800:] if result.stderr else ''}")
             err = (result.stderr or result.stdout or 'Nepoznata greška spotdl').strip()
             if err.startswith('usage:') or 'usage: spotdl' in err:
                 err = 'spotdl je pozvan sa pogrešnim argumentima. Proveri docker logs.'
