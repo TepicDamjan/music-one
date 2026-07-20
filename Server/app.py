@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, send_file, after_this_request
 from flask_cors import CORS
+from dotenv import load_dotenv
 import subprocess
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
@@ -12,14 +13,25 @@ import mimetypes
 import zipfile
 import tempfile
 
+# Ucitaj .env iz istog foldera kao app.py (radi i lokalno i u Dockeru ako .env postoji)
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
+
 MEDIA_EXTENSIONS = {'.mp3', '.flac', '.mp4', '.m4a', '.webm', '.opus', '.ogg', '.wav', '.mkv'}
 
 app = Flask(__name__)
 CORS(app, expose_headers=['Content-Disposition'])
 
 # Spotify API kljucevi
-SPOTIFY_CLIENT_ID = os.environ.get('SPOTIFY_CLIENT_ID', '')
-SPOTIFY_CLIENT_SECRET = os.environ.get('SPOTIFY_CLIENT_SECRET', '')
+SPOTIFY_CLIENT_ID = os.environ.get('SPOTIFY_CLIENT_ID', '').strip()
+SPOTIFY_CLIENT_SECRET = os.environ.get('SPOTIFY_CLIENT_SECRET', '').strip()
+
+if SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET:
+    print('Spotify credentials loaded from environment.')
+else:
+    print(
+        'WARNING: SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET nisu postavljeni. '
+        'Spotify funkcije nece raditi dok ih ne postavis (npr. docker run --env-file ...).'
+    )
 
 
 def _resolve_download_dir():
@@ -89,7 +101,13 @@ def _spotdl_argv(url: str, fmt: str):
         '--overwrite', 'force',
     ])
     if SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET:
-        cmd.extend(['--client-id', SPOTIFY_CLIENT_ID, '--client-secret', SPOTIFY_CLIENT_SECRET])
+        # --no-cache: bez njega spotdl zna ponovo koristiti stari kesirani token
+        # od default kredencijala i ignorisati nase kljuceve (spotDL issue #2606).
+        cmd.extend([
+            '--client-id', SPOTIFY_CLIENT_ID,
+            '--client-secret', SPOTIFY_CLIENT_SECRET,
+            '--no-cache',
+        ])
     # Ne koristiti --yt-dlp-args ovde: pogresan format lomi spotdl CLI (usage:).
     # Node je u Docker image-u; spotdl/yt-dlp ga nasledi iz PATH.
     cmd.extend(_download_proxy_cmd())
@@ -292,9 +310,28 @@ def _response_with_downloaded_files(snapshot_before, preferred_paths=None, start
         max_age=0,
     )
 
-# Spotify autentifikacija
-auth_manager = SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET)
-sp = spotipy.Spotify(auth_manager=auth_manager)
+# Spotify autentifikacija (lazy: app se podize i bez kljuceva, samo Spotify rute ne rade)
+_spotify_client = None
+
+
+def get_spotify():
+    """Vraca spotipy klijent ili None ako kredencijali nisu postavljeni."""
+    global _spotify_client
+    if _spotify_client is not None:
+        return _spotify_client
+    if not (SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET):
+        return None
+    auth_manager = SpotifyClientCredentials(
+        client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET
+    )
+    _spotify_client = spotipy.Spotify(auth_manager=auth_manager)
+    return _spotify_client
+
+
+SPOTIFY_NOT_CONFIGURED_MSG = (
+    'Spotify nije konfigurisan na serveru: postavi SPOTIFY_CLIENT_ID i '
+    'SPOTIFY_CLIENT_SECRET environment varijable (npr. docker run --env-file).'
+)
 
 def is_spotify_url(url):
     """Provera da li je URL Spotify link"""
@@ -320,6 +357,9 @@ def song_info():
 
     try:
         if is_spotify_url(url):
+            sp = get_spotify()
+            if sp is None:
+                return jsonify({'error': SPOTIFY_NOT_CONFIGURED_MSG}), 503
             track_id = url.split("/")[-1].split("?")[0]
             track_info = sp.track(track_id)
 
@@ -355,6 +395,9 @@ def download_song():
 
     if not is_spotify_url(url):
         return jsonify({'error': 'Unsupported URL. Please use Spotify links.'}), 400
+
+    if not (SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET):
+        return jsonify({'error': SPOTIFY_NOT_CONFIGURED_MSG}), 503
 
     try:
         print(f"Starting Spotify download for {url} [{fmt}]")

@@ -1,6 +1,6 @@
 {
-    "client_id": "acdedb42339d483d991113c8041657be",
-    "client_secret": "85e95cf8e51347cabedae8ea53abdc9a",
+    "client_id": null,
+    "client_secret": null,
     "auth_token": null,
     "user_auth": false,
     "headless": false,
@@ -16,7 +16,7 @@
         "azlyrics",
         "musixmatch"
     ],
-    "genius_token": "alXXDbPZtK1m2RrZ8I4k2Hn8Ahsd0Gh_o076HYvcdlBvmc0ULL1H8Z8xRlew5qaG",
+    "genius_token": null,
     "playlist_numbering": false,
     "playlist_retain_track_cover": false,
     "scan_for_songs": false,

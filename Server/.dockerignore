@@ -1,0 +1,9 @@
+# Tajne ne smiju u image - kljucevi se daju u runtime-u (docker run --env-file)
+.env
+.cache
+cookies.txt
+
+# Smece
+__pycache__/
+*.pyc
+.DS_Store

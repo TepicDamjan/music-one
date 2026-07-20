@@ -1,5 +1,6 @@
 flask
 flask-cors
+python-dotenv
 spotipy
 spotdl>=4.2.0,<5
 yt-dlp
