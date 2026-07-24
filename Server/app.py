@@ -56,11 +56,43 @@ MUSICONE_PROXY = os.environ.get('MUSICONE_PROXY', '').strip()
 if MUSICONE_PROXY:
     print('MUSICONE_PROXY is set; spotdl and yt-dlp will use it for outbound requests.')
 
+
+def _resolve_cookies_file():
+    """COOKIES_FILE env, inace /app/cookies.txt (Docker) ili Server/cookies.txt lokalno."""
+    raw = os.environ.get('COOKIES_FILE', '').strip()
+    candidates = []
+    if raw:
+        candidates.append(os.path.abspath(raw))
+    candidates.append('/app/cookies.txt')
+    candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cookies.txt'))
+    for path in candidates:
+        if path and os.path.isfile(path) and os.path.getsize(path) > 0:
+            return path
+    return None
+
+
+COOKIES_FILE = _resolve_cookies_file()
+if COOKIES_FILE:
+    print(f'YouTube cookies loaded from: {COOKIES_FILE}')
+else:
+    print(
+        'WARNING: cookies.txt nije pronadjen. Neki YouTube/Spotify downloadi '
+        'mogu pasti sa 403 / "Sign in to confirm you\'re not a bot".'
+    )
+
+
 def _download_proxy_cmd():
     """Vraca ['--proxy', url] ako je MUSICONE_PROXY postavljen, inace []."""
     if not MUSICONE_PROXY:
         return []
     return ['--proxy', MUSICONE_PROXY]
+
+
+def _cookies_cmd(flag='--cookies'):
+    """CLI argumenti za cookie fajl. yt-dlp koristi --cookies, spotdl --cookie-file."""
+    if not COOKIES_FILE:
+        return []
+    return [flag, COOKIES_FILE]
 
 
 def _spotdl_env():
@@ -126,6 +158,7 @@ def _spotdl_argv(url: str, fmt: str):
             '--client-secret', SPOTIFY_CLIENT_SECRET,
             '--no-cache',
         ])
+    cmd.extend(_cookies_cmd('--cookie-file'))
     # Ne koristiti --yt-dlp-args ovde: pogresan format lomi spotdl CLI (usage:).
     # Node je u Docker image-u; spotdl/yt-dlp ga nasledi iz PATH.
     # Proxy NE ide kroz --proxy (spotdl regex odbija hostname), vec kroz _spotdl_env().
@@ -133,8 +166,8 @@ def _spotdl_argv(url: str, fmt: str):
 
 
 def _yt_dlp_argv():
-    """Osnova yt-dlp komande: proxy + JS runtime (YouTube cesto zahteva Node/deno)."""
-    out = ['yt-dlp', *_download_proxy_cmd()]
+    """Osnova yt-dlp komande: proxy + cookies + JS runtime (YouTube cesto zahteva Node/deno)."""
+    out = ['yt-dlp', *_download_proxy_cmd(), *_cookies_cmd('--cookies')]
     js = os.environ.get('YTDLP_JS_RUNTIMES', '').strip()
     if js:
         out.extend(['--js-runtimes', js])
