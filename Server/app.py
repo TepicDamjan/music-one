@@ -113,7 +113,9 @@ def _spotdl_argv(url: str, fmt: str):
     cmd.extend([
         '--format', fmt,
         '--output', DOWNLOAD_DIR,
-        '--audio', 'youtube-music',
+        # Fallback na obican YouTube kad je YT Music pogodak blokiran/nedostupan
+        # (AudioProviderError: YT-DLP download error za pojedine pesme).
+        '--audio', 'youtube-music', 'youtube',
         '--overwrite', 'force',
     ])
     if SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET:
