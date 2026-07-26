@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from "next/link";
 import { fetchSongInfo, downloadSong, fetchYoutubeInfo, downloadYoutube, SongInfo, DownloadResult } from '@/app/utils/api';
@@ -16,6 +16,33 @@ const FORMAT_LABELS: Record<AudioFormat, { label: string; icon: string; desc: st
     mp4:  { label: 'MP4',  icon: '🎬', desc: 'Video + audio' },
 };
 
+/** Heurističke faze dok čekamo sync download (nema pravog % sa servera). */
+const DOWNLOAD_PHASES: { atMs: number; progress: number; label: string }[] = [
+    { atMs: 0, progress: 8, label: 'Povezivanje sa serverom…' },
+    { atMs: 2500, progress: 22, label: 'Pretraga…' },
+    { atMs: 8000, progress: 45, label: 'Preuzimanje…' },
+    { atMs: 20000, progress: 68, label: 'Konverzija…' },
+    { atMs: 45000, progress: 85, label: 'Priprema fajla…' },
+];
+
+function ProgressBar({ progress, label }: { progress: number; label: string }) {
+    const pct = Math.min(100, Math.max(0, Math.round(progress)));
+    return (
+        <div className="w-full max-w-sm space-y-2" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+            <div className="flex justify-between items-center text-greenPtext text-xs">
+                <span className="opacity-80">{label}</span>
+                <span className="font-bold tabular-nums">{pct}%</span>
+            </div>
+            <div className="h-2.5 w-full rounded-full bg-greenBG border border-greenPtext/30 overflow-hidden">
+                <div
+                    className="h-full rounded-full bg-greenPtext transition-[width] duration-500 ease-out"
+                    style={{ width: `${pct}%` }}
+                />
+            </div>
+        </div>
+    );
+}
+
 function Download() {
     const searchParams = useSearchParams();
     const [songInfo, setSongInfo] = useState<SongInfo | null>(null);
@@ -26,10 +53,31 @@ function Download() {
     const [savedTo, setSavedTo] = useState<string>('');
     const [loadingMessage, setLoadingMessage] = useState('Učitavanje...');
     const [selectedFormat, setSelectedFormat] = useState<AudioFormat>('mp3');
+    const [progress, setProgress] = useState(0);
+    const [progressLabel, setProgressLabel] = useState('');
+    const phaseTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
     const url = searchParams.get('url');
     const platform = (searchParams.get('platform') || 'spotify') as 'spotify' | 'youtube';
     const availableFormats = platform === 'youtube' ? YOUTUBE_FORMATS : SPOTIFY_FORMATS;
+
+    const clearPhaseTimers = () => {
+        phaseTimersRef.current.forEach(clearTimeout);
+        phaseTimersRef.current = [];
+    };
+
+    const startPhaseTimers = () => {
+        clearPhaseTimers();
+        DOWNLOAD_PHASES.forEach(({ atMs, progress: p, label }) => {
+            const id = setTimeout(() => {
+                setProgress((prev) => Math.max(prev, p));
+                setProgressLabel(label);
+            }, atMs);
+            phaseTimersRef.current.push(id);
+        });
+    };
+
+    useEffect(() => () => clearPhaseTimers(), []);
 
     useEffect(() => {
         if (!url) {
@@ -72,6 +120,9 @@ function Download() {
             setError('');
             setDownloadSuccess(false);
             setSavedTo('');
+            setProgress(0);
+            setProgressLabel(DOWNLOAD_PHASES[0].label);
+            startPhaseTimers();
 
             let result: DownloadResult;
             if (platform === 'youtube') {
@@ -80,9 +131,15 @@ function Download() {
                 result = await downloadSong(url, selectedFormat);
             }
 
+            clearPhaseTimers();
+            setProgress(100);
+            setProgressLabel('Gotovo!');
             setSavedTo(result.filename ? `Preuzeto: ${result.filename}` : result.message);
             setDownloadSuccess(true);
         } catch (err) {
+            clearPhaseTimers();
+            setProgress(0);
+            setProgressLabel('');
             setError(err instanceof Error ? err.message : 'Greška pri preuzimanju');
         } finally {
             setDownloading(false);
@@ -141,7 +198,7 @@ function Download() {
                             </div>
 
                             {/* Format selector */}
-                            {!downloadSuccess && (
+                            {!downloadSuccess && !downloading && (
                                 <div className="w-full">
                                     <p className="text-greenPtext text-xs text-center mb-2 opacity-70 uppercase tracking-wider">Format</p>
                                     <div className="flex flex-row gap-2 justify-center">
@@ -169,6 +226,11 @@ function Download() {
                                         {FORMAT_LABELS[selectedFormat].desc}
                                     </p>
                                 </div>
+                            )}
+
+                            {/* Progress */}
+                            {(downloading || (downloadSuccess && progress === 100)) && progressLabel && (
+                                <ProgressBar progress={progress} label={progressLabel} />
                             )}
 
                             {/* Success */}
@@ -206,7 +268,7 @@ function Download() {
                                     className="w-24 h-16 bg-greenBG rounded-lg flex justify-center items-center cursor-pointer hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed border-2 border-greenPtext">
                                     {downloading ? (
                                         <div className="text-greenPtext animate-pulse text-xs text-center px-1">
-                                            Preuzimanje<br/>{selectedFormat.toUpperCase()}...
+                                            {selectedFormat.toUpperCase()}…
                                         </div>
                                     ) : (
                                         <svg width="40" height="42" viewBox="0 0 40 42" fill="none" xmlns="http://www.w3.org/2000/svg">
