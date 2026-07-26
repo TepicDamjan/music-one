@@ -5,6 +5,9 @@ import subprocess
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import os
+import re
+import secrets
+import string
 import sys
 import json
 import shutil
@@ -12,6 +15,7 @@ import time
 import mimetypes
 import zipfile
 import tempfile
+from urllib.parse import urlparse, urlunparse
 
 # Ucitaj .env iz istog foldera kao app.py (radi i lokalno i u Dockeru ako .env postoji)
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
@@ -51,10 +55,14 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 print(f"Downloads will be saved to: {DOWNLOAD_DIR}")
 
 # Opcioni proxy samo za spotdl / yt-dlp (npr. residential proxy da Oracle IP ne bude blokiran).
-# Postavi MUSICONE_PROXY, npr. http://user:pass@host:port ili socks5://host:1080
+# Postavi MUSICONE_PROXY, npr. http://user:pass@host:port
+# Za IPRoyal: dodaj MUSICONE_PROXY_COUNTRY=de (sticky session se generise po downloadu).
 MUSICONE_PROXY = os.environ.get('MUSICONE_PROXY', '').strip()
+MUSICONE_PROXY_COUNTRY = os.environ.get('MUSICONE_PROXY_COUNTRY', '').strip().lower()
+MUSICONE_PROXY_LIFETIME = os.environ.get('MUSICONE_PROXY_LIFETIME', '30m').strip() or '30m'
 if MUSICONE_PROXY:
-    print('MUSICONE_PROXY is set; spotdl and yt-dlp will use it for outbound requests.')
+    extra = f' country={MUSICONE_PROXY_COUNTRY}' if MUSICONE_PROXY_COUNTRY else ''
+    print(f'MUSICONE_PROXY is set; spotdl and yt-dlp will use it{extra}.')
 
 
 def _resolve_cookies_file():
@@ -81,11 +89,53 @@ else:
     )
 
 
+def _effective_proxy_url():
+    """Vraca proxy URL za jedan download. Za IPRoyal (ili kad je COUNTRY set)
+    ubacuje novi sticky session — isti IP tokom downloada, novi IP za sledeci.
+    Tvoj uspesni test: ..._country-de_session-xxxxxxxx_lifetime-30m@geo.iproyal.com
+    """
+    if not MUSICONE_PROXY:
+        return None
+
+    host_l = (urlparse(MUSICONE_PROXY).hostname or '').lower()
+    sticky = (
+        'iproyal.com' in host_l
+        or bool(MUSICONE_PROXY_COUNTRY)
+        or os.environ.get('MUSICONE_PROXY_STICKY', '').strip().lower() in ('1', 'true', 'yes')
+    )
+    if not sticky:
+        return MUSICONE_PROXY
+
+    parsed = urlparse(MUSICONE_PROXY)
+    if not parsed.hostname or parsed.username is None:
+        return MUSICONE_PROXY
+
+    password = parsed.password or ''
+    password = re.sub(r'_session-[A-Za-z0-9]+', '', password)
+    password = re.sub(r'_lifetime-[A-Za-z0-9]+', '', password)
+    password = re.sub(r'_country-[A-Za-z0-9,]+', '', password)
+
+    session = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(8))
+    country = MUSICONE_PROXY_COUNTRY
+    extras = ''
+    if country:
+        extras += f'_country-{country}'
+    extras += f'_session-{session}_lifetime-{MUSICONE_PROXY_LIFETIME}'
+    new_password = f'{password}{extras}'
+
+    host = parsed.hostname
+    if parsed.port:
+        host = f'{host}:{parsed.port}'
+    netloc = f'{parsed.username}:{new_password}@{host}'
+    return urlunparse((parsed.scheme, netloc, parsed.path or '', '', '', ''))
+
+
 def _download_proxy_cmd():
     """Vraca ['--proxy', url] ako je MUSICONE_PROXY postavljen, inace []."""
-    if not MUSICONE_PROXY:
+    proxy = _effective_proxy_url()
+    if not proxy:
         return []
-    return ['--proxy', MUSICONE_PROXY]
+    return ['--proxy', proxy]
 
 
 def _cookies_cmd(flag='--cookies'):
@@ -99,13 +149,14 @@ def _spotdl_env():
     """Env za spotdl podproces. spotdl-ov --proxy regex prihvata samo IP adrese
     (hostname tipa gw.example.com odbija kao 'Invalid proxy server'), pa proxy
     prosledjujemo kroz HTTP(S)_PROXY varijable koje requests i yt-dlp postuju."""
-    if not MUSICONE_PROXY:
+    proxy = _effective_proxy_url()
+    if not proxy:
         return None
     env = os.environ.copy()
     for key in ('HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy'):
-        env[key] = MUSICONE_PROXY
+        env[key] = proxy
+    print(f'spotdl proxy session ready (sticky={bool(MUSICONE_PROXY_COUNTRY or "iproyal" in MUSICONE_PROXY.lower())})')
     return env
-
 
 _spotdl_major_cache = None
 
